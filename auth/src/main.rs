@@ -1,13 +1,13 @@
 mod repository;
 mod schema;
 
-use axum::{Router, routing::get};
+use axum::{Json, Router, extract::State, http::StatusCode, routing::get};
 use diesel::{Insertable, Queryable, Selectable};
 use diesel_async::{
     AsyncPgConnection,
     pooled_connection::{AsyncDieselConnectionManager, deadpool::Pool},
 };
-use repository::UserRepository;
+use repository::{UserRepository, UserRepositoryError};
 use schema::users;
 use serde::{Deserialize, Serialize};
 
@@ -43,6 +43,31 @@ async fn root() -> &'static str {
     "Hello, World!"
 }
 
+async fn create_user(
+    State(state): State<AppState>,
+    Json(payload): Json<CreateUser>,
+) -> Result<(StatusCode, Json<User>), StatusCode> {
+    let user = state
+        .user_repository
+        .create(&payload)
+        .await
+        .map_err(repository_error_status)?;
+
+    Ok((StatusCode::CREATED, Json(user)))
+}
+
+// -------------------------------- Error Handling --------------------------------
+
+fn repository_error_status(error: UserRepositoryError) -> StatusCode {
+    match error {
+        UserRepositoryError::UsernameAlreadyExists => StatusCode::CONFLICT,
+        UserRepositoryError::Internal(error) => {
+            eprintln!("user repository error: {error}");
+            StatusCode::INTERNAL_SERVER_ERROR
+        }
+    }
+}
+
 // -------------------------------- Database --------------------------------
 
 fn create_database_pool() -> DbPool {
@@ -70,7 +95,10 @@ async fn main() {
         user_repository: UserRepository::new(pool),
     };
 
-    let app = Router::new().route("/", get(root)).with_state(state);
+    let app = Router::new()
+        .route("/", get(root))
+        .route("/users", axum::routing::post(create_user))
+        .with_state(state);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
 
