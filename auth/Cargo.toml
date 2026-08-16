@@ -10,3 +10,5 @@ diesel-async = { version = "0.9.2", features = ["deadpool", "postgres"] }
 serde = { version = "1.0.229", features = ["derive"] }
 tokio = { version = "1.53.1", features = ["macros", "net", "rt-multi-thread"] }
 tracing-subscriber = "0.3"
+utoipa = { version = "5.5.0", features = ["macros"] }
+utoipa-scalar = { version = "0.3.0", features = ["axum"] }

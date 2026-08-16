@@ -10,6 +10,8 @@ use diesel_async::{
 use repository::{UserRepository, UserRepositoryError};
 use schema::users;
 use serde::{Deserialize, Serialize};
+use utoipa::{OpenApi, ToSchema};
+use utoipa_scalar::{Scalar, Servable};
 
 const DEFAULT_DATABASE_URL: &str = "postgres://auth:auth@localhost:5432/auth";
 type DbPool = Pool<AsyncPgConnection>;
@@ -23,13 +25,13 @@ struct AppState {
 
 // -------------------------------- Request / Response --------------------------------
 
-#[derive(Deserialize, Insertable)]
+#[derive(Deserialize, Insertable, ToSchema)]
 #[diesel(table_name = users)]
 struct CreateUser {
     username: String,
 }
 
-#[derive(Queryable, Selectable, Serialize)]
+#[derive(Queryable, Selectable, Serialize, ToSchema)]
 #[diesel(table_name = users)]
 #[diesel(check_for_backend(diesel::pg::Pg))]
 struct User {
@@ -43,6 +45,16 @@ async fn root() -> &'static str {
     "Hello, World!"
 }
 
+#[utoipa::path(
+    post,
+    path = "/users",
+    request_body = CreateUser,
+      responses(
+          (status = 201, description = "사용자 생성 성공", body = User),
+          (status = 409, description = "이미 존재하는 사용자 이름"),
+          (status = 500, description = "서버 내부 오류")
+      )
+)]
 async fn create_user(
     State(state): State<AppState>,
     Json(payload): Json<CreateUser>,
@@ -56,6 +68,14 @@ async fn create_user(
     Ok((StatusCode::CREATED, Json(user)))
 }
 
+#[utoipa::path(
+    get,
+    path = "/users",
+    responses(
+        (status = 200, description = "사용자 목록 조회 성공", body = [User]),
+        (status = 500, description = "서버 내부 오류")
+    )
+)]
 async fn list_users(
     State(state): State<AppState>,
 ) -> Result<(StatusCode, Json<Vec<User>>), StatusCode> {
@@ -93,6 +113,14 @@ fn create_database_pool() -> DbPool {
         .expect("failed to create Diesel connection pool")
 }
 
+// -------------------------------- API Documentation --------------------------------
+
+#[derive(OpenApi)]
+#[openapi(paths(create_user, list_users), components(schemas(CreateUser, User)))]
+struct ApiDoc;
+
+// -------------------------------- Application Entry Point --------------------------------
+
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
@@ -110,11 +138,13 @@ async fn main() {
     let app = Router::new()
         .route("/", get(root))
         .route("/users", get(list_users).post(create_user))
+        .merge(Scalar::with_url("/docs", ApiDoc::openapi()))
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
 
     println!("Root: http://localhost:3000");
+    println!("API docs: http://localhost:3000/docs");
 
     axum::serve(listener, app).await.unwrap();
 }
