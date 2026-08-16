@@ -56,6 +56,18 @@ async fn create_user(
     Ok((StatusCode::CREATED, Json(user)))
 }
 
+async fn list_users(
+    State(state): State<AppState>,
+) -> Result<(StatusCode, Json<Vec<User>>), StatusCode> {
+    let users = state
+        .user_repository
+        .list()
+        .await
+        .map_err(repository_error_status)?;
+
+    Ok((StatusCode::OK, Json(users)))
+}
+
 // -------------------------------- Error Handling --------------------------------
 
 fn repository_error_status(error: UserRepositoryError) -> StatusCode {
@@ -97,7 +109,7 @@ async fn main() {
 
     let app = Router::new()
         .route("/", get(root))
-        .route("/users", axum::routing::post(create_user))
+        .route("/users", get(list_users).post(create_user))
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();

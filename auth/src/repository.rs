@@ -1,6 +1,6 @@
 use std::error::Error;
 
-use diesel::SelectableHelper;
+use diesel::{QueryDsl, SelectableHelper};
 use diesel_async::{AsyncPgConnection, RunQueryDsl, pooled_connection::deadpool::Object};
 
 use crate::{CreateUser, DbPool, User, schema::users};
@@ -32,6 +32,16 @@ impl UserRepository {
                 ) => UserRepositoryError::UsernameAlreadyExists,
                 error => UserRepositoryError::Internal(Box::new(error)),
             })
+    }
+
+    pub(crate) async fn list(&self) -> Result<Vec<User>, UserRepositoryError> {
+        let mut connection = self.connection().await?;
+
+        users::table
+            .select(User::as_select())
+            .load(&mut connection)
+            .await
+            .map_err(|error| UserRepositoryError::Internal(Box::new(error)))
     }
 
     async fn connection(&self) -> Result<DbConnection, UserRepositoryError> {
